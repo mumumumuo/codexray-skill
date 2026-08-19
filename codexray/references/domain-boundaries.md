@@ -11,7 +11,7 @@
 
 | 漏洞类型 | 责任域 |
 |---------|-----------|
-| SQL / NoSQL / LDAP / XPath / PromQL / LogsQL 注入 | `injection` |
+| SQL / NoSQL / LDAP / XPath 注入、XXE（XML 外部实体注入） | `injection` |
 | 命令注入 / 反序列化 / 模板 SSTI / 表达式语言 / 动态代码执行 | `rce` |
 | 文件上传 / 下载 / 路径遍历 / zip slip | `file` |
 | 鉴权机制缺陷 / 越权 / 注册提权 / 密码存储 / JWT 签名密钥 | `auth` |
@@ -25,12 +25,13 @@
 - **凭证泄露**：JWT 签名密钥 / Session 加密密钥 / 密码哈希算法 → `auth`；数据库密码 / 第三方 API Key / OAuth Client Secret → `config`
 - **模板引擎**：模板注入导致 RCE → `rce`；模板注入导致 XSS → `xss`
 - **越权 + 业务**：跳过权限校验本身 → `auth`；权限校验存在但业务流程被绕过（如重复领券）→ `business`
+- **XXE 的后果**：读文件 / SSRF / DoS 都只在 `injection` 出一条 finding（根因是解析器配置）；XML 解析后的对象进入反序列化链（如 `XMLDecoder`）→ `rce`
 - **响应中的敏感信息**：错误堆栈回显 / Swagger 暴露 → `config`；越权返回他人数据 → `auth`
 
 ## 各域专属范围一句话
 
 - `rce`：命令执行 / 代码注入 / 反序列化 RCE / 模板注入 RCE / 表达式语言注入 / 动态加载与反射
-- `injection`：SQL / NoSQL / LDAP / XPath 注入
+- `injection`：SQL / NoSQL / LDAP / XPath 注入、XXE（含 Excel/OOXML 导入场景）
 - `file`：任意文件上传 / 任意文件下载读取 / 路径遍历 / 文件包含 / 危险归档解压
 - `auth`：未授权访问 / 认证绕过 / 水平越权 / 垂直越权 / 注册提权 / 密码存储算法 / JWT 签名密钥 / Session 管理 / OAuth 流程缺陷
 - `business`：业务流程绕过 / 金额或数量篡改 / 状态机绕过 / 重复支付或重复发券（幂等性）/ 条件竞争 / SSRF（业务层用户输入→URL）/ 资源耗尽 DoS
