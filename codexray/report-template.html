@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>安全审计报告 - 【项目名】</title>
+<!--
+  源码安全审计报告 HTML 模板（交互式单文件版）
+
+  使用规则：
+  1. 本文件是只读骨架，严禁直接 Edit 本模板。报告采用实时提交：预扫结束即建初稿
+     （用 cp 把本文件复制为「安全审计报告-<项目名>.html」→ 在副本上删除三个视图中的示例占位卡片
+       → 保留各视图的锚点注释 → 填架构概览与 meta；不要 Read 全文再 Write 重写，约 4.3 万字符白烧上下文），
+     随后边审边用 Edit 在报告文件上追加内容。统计数字永远由 JS 从卡片 DOM 自动重算，增量追加不需手改任何计数。
+  2. 所有正文内容必须做 HTML 转义：& → &amp;  < → &lt;  > → &gt;  " → &quot;
+     （POC、代码证据里的 <token>、-> 、引号都要转义；CSS/JS/标签结构本身不动）
+  3. 布局：左侧 = 筛选标签(全部/严重/高危/中危/低危 + 攻击链 + 误报) + 漏洞类型筛选 + 漏洞卡片列表；
+     右侧 = 吸顶面板(项目架构概览 / 审计汇总 / 漏洞清单 / 修复建议)。
+     交互(筛选、展开、复制、点击清单跳转)由文件末尾 <script> 提供，脚本原样保留。
+  4. 「漏洞卡片」：每条 finding 一个 <div class="vuln-card">，按 critical → high → medium → low 排序。
+     增量提交时把卡片插入 #vulnList 内锚点注释「finding 块结束」之前，且放在已有同等级卡片的最后一个之后；
+     攻击链/误报复核后分别插入 #chainsView / #fpView 内对应锚点注释之前（data-fid 为 CHAIN-N / FP-N）。
+     必填属性：data-sev="critical|high|medium|low"、data-stage="rce|injection|file|auth|business|xss|config|other"
+     （data-stage 取该 finding 归属的审计域）、data-fid="V-001"（依次编号）。
+     data-confidence="suspected" 用于汇总统计「疑似」数量。
+     计数标签、汇总面板、漏洞清单表、修复建议列表全部由 JS 从卡片 DOM 自动生成，不要手填。
+  5. 字段映射（finding-schema → HTML）：
+       severity        → sev-tag 类名 sev-{critical|high|medium|low}，文本 CRITICAL/HIGH/MEDIUM/LOW
+       confidence      → suspected 时加 <span class="suspected-tag">疑似</span>，且卡片加 data-confidence="suspected"
+       vuln_type       → vuln-type-tag 文本
+       min_privilege   → priv-tag 文本（none/user/admin）
+       title           → vuln-title 内文本（expand-icon 之后）
+       description     → 「描述」detail-text
+       severity_reason → 「定级评判」reason-box
+       poc             → 「POC」code-block 内 pre.poc-code（自带复制按钮）
+       expected_result → 「预期响应」expected-code-block 内 pre.expected-response-code（配置类 finding 省略本块）
+       file_path:line  → 「位置」code.location-code
+       code_trace      → 「调用链」trace-box，四行：Route / Source / 链路(chain-fn + chain-sep) / Sink(sink-hl)
+       evidence        → 「证据」pre.evidence-code
+       fix_suggestion  → 「修复建议」div.fix-text
+  6. 「攻击链视图」（可选）：每条链一个 vuln-card（vuln-critical 等类名按组合严重性），data-fid="CHAIN-1"。
+     折叠态显示 chain-brief 一句话概括；展开后为 描述 + 利用步骤(chain-step-card：步骤N/标题/描述/关联漏洞/可选POC)。
+  7. 「误报视图」（可选）：复核阶段剔除的误报，每条一个 vuln-card vuln-fp，data-fid="FP-1"，
+     含驳回原因(fp-reason-block)与原始信息。
+  7b. 攻击链与误报都是复核（Phase 3）的产物，只有全量扫描才有：
+     快速扫描 / 自定义域扫描不做复核，须删除 #chainsView 与 #fpView 两个视图及其 sev-tab 标签按钮
+     （全量扫描下无误报内容时同样删除 #fpView）。脚本对两个视图缺席都做了判空，删掉不影响其余功能。
+  8. 架构区：arch-grid（框架/语言/认证机制/数据源/用户输入入口，取合并后的 prescan.json）、
+     arch-desc（架构摘要一句话）、
+     目录结构(details + dir-tree)、中间件(details + mw-list，scope 取 global/router/route/handler/controller)、
+     端点列表(details + endpoint-list，每端点一个 endpoint-item)。
+  9. 覆盖度说明不放 HTML，写在对话输出的总结里。
+  10. CSS 与 <script> 原样保留，不要改写、压缩或省略。
+-->
+<style>
+:root {
+  --bg-primary: #f7fbfc; --bg-secondary: #ffffff; --bg-tertiary: #edf5f7; --bg-card: #ffffff;
+  --bg-input: #ffffff; --bg-hover: #edf5f7; --bg-elevated: #ffffff;
+  --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+  --accent-primary: #3f7f8f; --accent-secondary: #5b7f95; --accent-tertiary: #7d9aaa;
+  --accent-glow: rgba(63, 127, 143, 0.10);
+  --border-color: #dfe9ed;
+  --severity-critical: #ef4444; --severity-high: #f97316; --severity-medium: #ca8a04;
+  --severity-low: #3b82f6; --severity-info: #6b7280;
+  --status-completed: #4f8a6d;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --radius: 6px; --radius-sm: 4px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); padding: 24px 28px 40px; line-height: 1.6; }
+.mono { font-family: var(--font-mono); }
+.audit-results { max-width: 1800px; margin: 0 auto; }
+
+/* Page header */
+.page-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+.page-head h1 { font-size: 24px; font-weight: 800; color: var(--text-primary); }
+.findings-count { font-size: 13px; color: var(--accent-primary); border: 1px solid var(--accent-primary); padding: 2px 10px; border-radius: 3px; }
+.meta { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+.meta span { margin-right: 20px; }
+.meta strong { color: var(--text-secondary); }
+
+/* Main Split */
+.main-split { display: flex; gap: 16px; align-items: flex-start; }
+.left-panel { flex: 1; min-width: 0; }
+.right-panel { width: 46%; flex-shrink: 0; position: sticky; top: 16px; max-height: calc(100vh - 60px); overflow-y: auto; }
+
+/* Top Tabs */
+.top-tabs { margin-bottom: 14px; }
+.severity-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.sev-tab {
+  display: flex; align-items: center; gap: 6px; padding: 7px 14px;
+  border: 1px solid var(--border-color); border-radius: var(--radius); cursor: pointer;
+  background: var(--bg-card); font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+  color: var(--text-muted); transition: all 0.15s; letter-spacing: 0.3px;
+}
+.sev-tab:hover { border-color: var(--text-muted); color: var(--text-primary); }
+.sev-tab.active { background: var(--accent-glow); border-color: var(--accent-primary); color: var(--accent-primary); }
+.sev-tab-critical .tab-num { color: var(--severity-critical); }
+.sev-tab-high .tab-num { color: var(--severity-high); }
+.sev-tab-medium .tab-num { color: var(--severity-medium); }
+.sev-tab-low .tab-num { color: var(--severity-low); }
+.sev-tab-chain { border-color: rgba(239,68,68,0.3); }
+.sev-tab-chain .tab-num { color: var(--severity-critical); }
+.sev-tab-fp { border-color: rgba(107,114,128,0.3); }
+.sev-tab-fp .tab-num { color: var(--text-muted); }
+.tab-num { font-size: 14px; font-weight: 800; }
+
+/* Type Filter */
+.type-filter {
+  display: grid; grid-template-columns: minmax(112px, auto) 1fr;
+  gap: 10px; align-items: start; margin-bottom: 12px; max-width: 100%; padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 62%, transparent), color-mix(in srgb, var(--bg-card) 92%, transparent));
+}
+.type-filter-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; color: var(--text-primary); font-size: 12px; font-weight: 800; }
+.type-filter-label small { color: var(--text-muted); font-size: 10px; font-weight: 600; line-height: 1.4; }
+.type-filter-tabs { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; }
+.type-tab {
+  min-height: 28px; padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent); color: var(--text-muted); font-size: 11px;
+  font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+}
+.type-count { font-size: 10px; font-weight: 800; opacity: 0.7; font-family: var(--font-mono); }
+.type-tab:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.type-tab.active { color: var(--accent-primary); border-color: var(--accent-primary); background: var(--accent-glow); }
+.type-tab.empty { opacity: 0.68; }
+.type-tab.empty:hover, .type-tab.empty.active { opacity: 1; }
+.type-critical { border-left: 2px solid var(--severity-critical); }
+.type-high { border-left: 2px solid var(--severity-high); }
+.type-medium { border-left: 2px solid var(--severity-medium); }
+.type-low { border-left: 2px solid var(--severity-low); }
+.type-info { border-left: 2px solid var(--severity-info); }
+
+/* Panels */
+.panel { border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.panel-header { padding: 10px 14px; font-size: 14px; font-weight: 700; color: var(--accent-primary); border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
+.panel-icon { margin-right: 6px; }
+.panel-body { padding: 14px; background: var(--bg-card); }
+
+/* Architecture */
+.arch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.arch-cell { padding: 10px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+.arch-cell.full { grid-column: 1 / -1; }
+.arch-key { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--accent-secondary); margin-bottom: 4px; }
+.arch-val { font-size: 14px; color: var(--text-primary); line-height: 1.5; }
+.arch-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; padding: 10px 0; border-top: 1px dashed var(--border-color); }
+.arch-details { margin-top: 10px; }
+.arch-toggle { font-size: 12px; font-weight: 700; color: var(--accent-secondary); cursor: pointer; padding: 6px 0; letter-spacing: 0.5px; }
+.arch-details[open] .arch-toggle { padding-bottom: 2px; }
+.dir-tree { font-size: 12px; line-height: 1.7; padding: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin-top: 6px; max-height: 250px; overflow-y: auto; color: var(--text-secondary); white-space: pre; }
+
+/* Endpoints */
+.endpoint-list { display: grid; gap: 7px; margin-top: 8px; max-height: 360px; overflow-y: auto; padding-right: 3px; }
+.endpoint-item {
+  padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+  border-radius: 7px; background: color-mix(in srgb, var(--bg-primary) 74%, transparent);
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.endpoint-item:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent-primary) 28%, var(--border-color)); background: color-mix(in srgb, var(--bg-hover) 60%, transparent); }
+.endpoint-main { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; min-width: 0; }
+.endpoint-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0; }
+.route-method { font-weight: 800; font-size: 10px; padding: 3px 6px; border-radius: 4px; min-width: 48px; text-align: center; }
+.method-get { color: #22c55e; background: rgba(34,197,94,0.1); }
+.method-post { color: #3b82f6; background: rgba(59,130,246,0.1); }
+.method-put { color: #f59e0b; background: rgba(245,158,11,0.1); }
+.method-patch { color: #a855f7; background: rgba(168,85,247,0.1); }
+.method-delete { color: #ef4444; background: rgba(239,68,68,0.1); }
+.route-path { color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-family: var(--font-mono); }
+.route-desc { color: var(--text-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.route-auth { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: rgba(107,114,128,0.15); color: var(--text-muted); flex-shrink: 0; }
+.route-auth.open { border: 1px dashed color-mix(in srgb, var(--border-color) 80%, transparent); background: transparent; }
+
+/* Middleware */
+.mw-list { display: grid; gap: 6px; margin-top: 8px; max-height: 280px; overflow-y: auto; padding-right: 3px; }
+.mw-item {
+  display: grid; grid-template-columns: auto auto 1fr;
+  align-items: center; gap: 8px; padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+  border-radius: 6px; background: color-mix(in srgb, var(--bg-primary) 74%, transparent);
+  min-width: 0;
+}
+.mw-name { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-primary); }
+.mw-scope { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; letter-spacing: 0.4px; text-transform: uppercase; flex-shrink: 0; }
+.mw-scope-global { color: #ef4444; background: rgba(239,68,68,0.1); }
+.mw-scope-router, .mw-scope-route { color: #f59e0b; background: rgba(245,158,11,0.1); }
+.mw-scope-handler, .mw-scope-controller { color: #3b82f6; background: rgba(59,130,246,0.1); }
+.mw-desc { color: var(--text-muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Summary */
+.summary-row { display: flex; gap: 20px; margin-bottom: 10px; }
+.summary-item { display: flex; flex-direction: column; align-items: center; }
+.summary-key { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.summary-val { font-size: 20px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+
+/* Vuln Cards */
+.vuln-list { display: flex; flex-direction: column; gap: 8px; }
+.vuln-card { border: 1px solid var(--border-color); border-left: 3px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); transition: border-color 0.15s; }
+.vuln-card:hover { border-color: var(--text-muted); }
+.vuln-critical { border-left-color: var(--severity-critical); }
+.vuln-high { border-left-color: var(--severity-high); }
+.vuln-medium { border-left-color: var(--severity-medium); }
+.vuln-low { border-left-color: var(--severity-low); }
+.vuln-info { border-left-color: var(--severity-info); }
+.vuln-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 0; cursor: pointer; }
+.vuln-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sev-tag { padding: 2px 6px; border-radius: 2px; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; font-family: var(--font-mono); }
+.sev-critical { background: rgba(239,68,68,0.15); color: var(--severity-critical); border: 1px solid rgba(239,68,68,0.3); }
+.sev-high { background: rgba(249,115,22,0.15); color: var(--severity-high); border: 1px solid rgba(249,115,22,0.3); }
+.sev-medium { background: rgba(234,179,8,0.15); color: var(--severity-medium); border: 1px solid rgba(234,179,8,0.3); }
+.sev-low { background: rgba(59,130,246,0.15); color: var(--severity-low); border: 1px solid rgba(59,130,246,0.3); }
+.vuln-type-tag { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.suspected-tag { font-size: 10px; padding: 1px 6px; border-radius: 2px; background: rgba(234,179,8,0.15); color: var(--severity-medium); border: 1px dashed rgba(234,179,8,0.4); }
+.priv-tag { font-size: 10px; padding: 1px 6px; border-radius: 2px; background: rgba(107,114,128,0.1); color: var(--text-muted); font-family: var(--font-mono); }
+.vuln-id { font-size: 11px; color: var(--text-muted); }
+.vuln-title { padding: 6px 14px 10px; font-size: 13px; font-weight: 500; color: var(--text-primary); cursor: pointer; display: flex; align-items: flex-start; gap: 6px; }
+.expand-icon { color: var(--text-muted); font-size: 11px; flex-shrink: 0; margin-top: 2px; }
+
+/* Detail */
+.vuln-detail { padding: 0 14px 14px; border-top: 1px solid var(--border-color); margin-top: 2px; }
+.detail-block { margin-top: 12px; }
+.detail-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: var(--accent-secondary); margin-bottom: 5px; font-family: var(--font-mono); }
+.detail-text { font-size: 13px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; }
+.reason-box {
+  padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--accent-secondary) 18%, var(--border-color));
+  border-left: 2px solid var(--accent-secondary); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-secondary) 5%, var(--bg-primary));
+  color: var(--text-secondary); font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+}
+.expected-code-block { position: relative; }
+.location-code { font-family: var(--font-mono); font-size: 12px; color: var(--accent-primary); background: var(--bg-primary); padding: 3px 8px; border-radius: 3px; border: 1px solid var(--border-color); }
+.trace-box { padding: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 12px; }
+.trace-row { margin-bottom: 4px; color: var(--text-secondary); }
+.trace-key { font-weight: 700; color: var(--accent-secondary); font-size: 10px; letter-spacing: 0.5px; }
+.trace-chain { padding: 6px 0; line-height: 1.8; }
+.chain-fn { color: var(--text-primary); }
+.chain-sep { color: var(--severity-critical); font-weight: 700; }
+.sink-hl { color: var(--severity-critical); font-weight: 600; }
+.evidence-code, .poc-code, .expected-response-code {
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
+  padding: 10px 12px; border-radius: var(--radius-sm); overflow-x: auto;
+  max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; margin: 0;
+  border: 1px solid var(--border-color);
+}
+.evidence-code { background: var(--bg-primary); color: var(--text-secondary); }
+.code-block { position: relative; }
+.code-block .poc-code { padding-top: 38px; }
+.poc-code { background: color-mix(in srgb, var(--accent-primary) 4%, var(--bg-primary)); color: var(--accent-primary); border-color: color-mix(in srgb, var(--accent-primary) 16%, var(--border-color)); }
+.expected-response-code {
+  background: color-mix(in srgb, var(--status-completed) 5%, var(--bg-primary));
+  color: var(--text-secondary); border-color: color-mix(in srgb, var(--status-completed) 18%, var(--border-color));
+}
+.copy-code-btn {
+  position: absolute; top: 7px; right: 8px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, var(--border-color));
+  border-radius: 5px; background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+  color: var(--text-muted); font-size: 11px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+}
+.copy-code-btn:hover { color: var(--accent-primary); border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-color)); }
+.copy-icon { position: relative; display: inline-block; width: 12px; height: 12px; }
+.copy-icon::before, .copy-icon::after { content: ''; position: absolute; border: 1.5px solid currentColor; border-radius: 2px; }
+.copy-icon::before { left: 1px; top: 3px; width: 7px; height: 7px; opacity: 0.55; }
+.copy-icon::after { right: 1px; top: 1px; width: 7px; height: 7px; background: color-mix(in srgb, var(--bg-card) 94%, transparent); }
+.fix-text { font-size: 13px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; padding: 8px 10px; background: var(--bg-primary); border-radius: var(--radius-sm); border-left: 2px solid var(--accent-secondary); }
+
+/* Attack Chain */
+.chain-brief { padding: 0 14px 10px; font-size: 12px; color: var(--text-muted); font-style: italic; }
+.chain-steps-list { display: flex; flex-direction: column; gap: 10px; }
+.chain-step-card { padding: 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); border-left: 2px solid var(--accent-secondary); }
+.step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.step-num { font-size: 10px; font-weight: 800; letter-spacing: 0.5px; color: var(--accent-secondary); font-family: var(--font-mono); padding: 2px 6px; background: color-mix(in srgb, var(--accent-secondary) 10%, transparent); border-radius: 2px; }
+.step-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.step-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 6px; }
+.step-ref { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+
+/* False Positives */
+.vuln-fp { border-left-color: rgba(107,114,128,0.4); opacity: 0.6; filter: saturate(0.3); transition: opacity 0.2s, filter 0.2s; }
+.vuln-fp:hover { opacity: 0.85; filter: saturate(0.5); }
+.vuln-fp .vuln-title { color: var(--text-muted); }
+.sev-tag.sev-fp { background: rgba(107,114,128,0.15); color: var(--text-muted); font-size: 10px; padding: 1px 6px; border-radius: 2px; }
+.fp-original-sev { font-size: 10px; color: var(--text-muted); padding: 1px 6px; border-radius: 2px; background: rgba(107,114,128,0.1); font-family: var(--font-mono); text-decoration: line-through; }
+.fp-reason-block { background: rgba(107,114,128,0.06); border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; border: 1px dashed rgba(107,114,128,0.25); }
+.fp-reason-block .detail-label { color: var(--text-muted); font-weight: 600; }
+.fp-reason { color: var(--text-muted); font-style: italic; }
+
+/* Vuln Table */
+.vuln-table { width: 100%; }
+.vuln-table-header { display: flex; align-items: center; padding: 8px 14px; border-bottom: 2px solid var(--border-color); background: var(--bg-secondary); font-size: 10px; font-weight: 800; letter-spacing: 0.5px; color: var(--accent-secondary); font-family: var(--font-mono); }
+.vuln-table-row { display: flex; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--border-color); font-size: 12px; cursor: pointer; transition: background 0.1s; }
+.vuln-table-row:last-child { border-bottom: none; }
+.vuln-table-row:hover { background: var(--bg-primary); }
+.vuln-table-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-num { width: 28px; flex-shrink: 0; text-align: center; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.col-title { flex: 2; min-width: 0; color: var(--text-primary); font-weight: 500; }
+.col-type { width: 90px; flex-shrink: 0; color: var(--text-secondary); }
+.col-sev { width: 70px; flex-shrink: 0; }
+.col-file { width: 130px; flex-shrink: 0; color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); }
+
+/* Fix Suggestions */
+.fix-item { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--border-color); }
+.fix-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.fix-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fix-item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.fix-item-text { font-size: 12px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; padding: 6px 10px; background: var(--bg-primary); border-radius: var(--radius-sm); border-left: 2px solid var(--accent-secondary); }
+
+.empty-state { padding: 40px 14px; text-align: center; color: var(--text-muted); font-size: 13px; border: 1px dashed var(--border-color); border-radius: var(--radius); }
+
+.footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border-color); color: var(--text-muted); font-size: 12px; }
+
+@media (max-width: 1100px) {
+  .main-split { flex-direction: column; }
+  .right-panel { width: 100%; position: static; max-height: none; }
+  .type-filter { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="audit-results">
+<div class="page-head">
+<h1>安全审计报告</h1>
+<span class="findings-count" id="headCount">【N】 项发现</span>
+</div>
+<div class="meta">
+<span>项目: <strong>【项目名】</strong></span>
+<span>模式: 【全量扫描/快速扫描/自定义域扫描(列出所选域)】</span>
+<span>创建时间: 【YYYY-MM-DD HH:MM:SS】</span>
+<span>完成时间: 【YYYY-MM-DD HH:MM:SS】</span>
+</div>
+
+<div class="main-split">
+<!-- ══════════ 左侧：筛选 + 漏洞卡片 ══════════ -->
+<div class="left-panel">
+<div class="top-tabs">
+<div class="severity-tabs">
+<button class="sev-tab active" data-view="findings" data-sev="all" onclick="onSevTab(this)"><span class="tab-num">0</span> 全部</button>
+<button class="sev-tab sev-tab-critical" data-view="findings" data-sev="critical" onclick="onSevTab(this)"><span class="tab-num">0</span> 严重</button>
+<button class="sev-tab sev-tab-high" data-view="findings" data-sev="high" onclick="onSevTab(this)"><span class="tab-num">0</span> 高危</button>
+<button class="sev-tab sev-tab-medium" data-view="findings" data-sev="medium" onclick="onSevTab(this)"><span class="tab-num">0</span> 中危</button>
+<button class="sev-tab sev-tab-low" data-view="findings" data-sev="low" onclick="onSevTab(this)"><span class="tab-num">0</span> 低危</button>
+<button class="sev-tab sev-tab-chain" data-view="chains" onclick="onSevTab(this)"><span class="tab-num">0</span> 攻击链</button>
+<!-- 无误报内容时删除下面这个按钮 -->
+<button class="sev-tab sev-tab-fp" data-view="fp" onclick="onSevTab(this)"><span class="tab-num">0</span> 误报</button>
+</div>
+</div>
+
+<!-- ── 攻击链视图（点攻击链标签时显示）── -->
+<div id="chainsView" style="display:none" class="vuln-list">
+<!-- ══════════ 每条攻击链复制下面整个 vuln-card；无链时本视图写明无可组合链及原因 ══════════ -->
+<div class="vuln-card vuln-critical" data-fid="CHAIN-1">
+<div class="vuln-header" onclick="toggleCard(this)">
+<div class="vuln-meta">
+<span class="sev-tag sev-critical">CRITICAL</span>
+<span class="vuln-type-tag">攻击链</span>
+</div>
+<span class="vuln-id mono">CHAIN-1</span>
+</div>
+<div class="vuln-title" onclick="toggleCard(this)"><span class="expand-icon">▸</span><span>【链名：漏洞A + 漏洞B → 组合后果】</span></div>
+<div class="chain-brief">【一句话概括完整闭环：攻击者从什么起点到最终得到什么】</div>
+<div class="vuln-detail" style="display:none">
+<div class="detail-block"><div class="detail-label">描述</div><div class="detail-text">【步骤序列、组合后严重性、真实可达性、攻击场景】</div></div>
+<div class="detail-block"><div class="detail-label">利用步骤</div><div class="chain-steps-list">
+<div class="chain-step-card">
+<div class="step-header"><span class="step-num">步骤 1</span><span class="step-title">【步骤标题】</span></div>
+<div class="step-desc">【该步做什么、为什么成立】</div>
+<div class="step-ref">关联漏洞: 【对应 finding 的标题】</div>
+<div class="code-block"><button class="copy-code-btn" onclick="copyReportCode(this)" title="复制 POC"><span class="copy-icon"></span><span class="copy-label">复制</span></button><pre class="poc-code">【本步骤请求包，可省略整个 code-block；&lt; &gt; &amp; 必须转义】</pre></div>
+</div>
+<div class="chain-step-card">
+<div class="step-header"><span class="step-num">步骤 2</span><span class="step-title">【...】</span></div>
+<div class="step-desc">【...】</div>
+<div class="step-ref">关联漏洞: 【...】</div>
+</div>
+</div></div>
+</div>
+</div>
+<!-- ══════════ 攻击链块结束 ══════════ -->
+</div>
+
+<!-- ── 误报视图（可选，复核阶段剔除的误报；无则删除整个 #fpView 与对应标签按钮）── -->
+<div id="fpView" style="display:none" class="vuln-list">
+<div class="vuln-card vuln-fp" data-fid="FP-1">
+<div class="vuln-header" onclick="toggleCard(this)">
+<div class="vuln-meta">
+<span class="sev-tag sev-fp">误报</span>
+<span class="vuln-type-tag">【漏洞类型】</span>
+<span class="fp-original-sev">原等级: 【HIGH】</span>
+</div>
+<span class="vuln-id mono">FP-1</span>
+</div>
+<div class="vuln-title" onclick="toggleCard(this)"><span class="expand-icon">▸</span><span>【原漏洞标题】</span></div>
+<div class="vuln-detail" style="display:none">
+<div class="detail-block fp-reason-block"><div class="detail-label">驳回原因</div><div class="detail-text fp-reason">【对照必要条件清单，缺哪条、代码证据是什么】</div></div>
+<div class="detail-block"><div class="detail-label">位置</div><code class="location-code">【file_path:line_number】</code></div>
+</div>
+</div>
+<!-- ══════════ 误报块结束 ══════════ -->
+</div>
+
+<!-- ── 漏洞视图：类型筛选 + 卡片列表（默认显示）── -->
+<div id="findingsView">
+<div class="type-filter">
+<div class="type-filter-label">
+<span>审计结论</span>
+<small>按审计阶段输出归类</small>
+</div>
+<div class="type-filter-tabs">
+<button class="type-tab" data-stage="all" onclick="onTypeTab(this)">全部 <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="rce" onclick="onTypeTab(this)">RCE <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="injection" onclick="onTypeTab(this)">注入 <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="file" onclick="onTypeTab(this)">文件 <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="auth" onclick="onTypeTab(this)">认证授权 <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="business" onclick="onTypeTab(this)">业务逻辑 <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="xss" onclick="onTypeTab(this)">XSS <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="config" onclick="onTypeTab(this)">配置组件 <span class="type-count">0</span></button>
+<button class="type-tab" data-stage="other" onclick="onTypeTab(this)">其他 <span class="type-count">0</span></button>
+</div>
+</div>
+
+<div id="vulnList" class="vuln-list">
+<!-- ══════════ 每条 finding 复制下面整个 vuln-card ══════════
+     类名 = vuln-card + vuln-{critical|high|medium|low}
+     data-sev = critical|high|medium|low；data-stage = rce|injection|file|auth|business|xss|config|other
+     data-fid = V-001 依次编号；confidence 为 suspected 时加 data-confidence="suspected" 和疑似标签 -->
+<div class="vuln-card vuln-critical" data-sev="critical" data-stage="auth" data-fid="V-001">
+<div class="vuln-header" onclick="toggleCard(this)">
+<div class="vuln-meta">
+<span class="sev-tag sev-critical">CRITICAL</span>
+<span class="vuln-type-tag">【漏洞类型】</span>
+<span class="priv-tag">【none|user|admin】</span>
+</div>
+<span class="vuln-id mono">V-001</span>
+</div>
+<div class="vuln-title" onclick="toggleCard(this)"><span class="expand-icon">▸</span><span>【漏洞标题：点明接口 + 参数 + 类型】</span></div>
+<div class="vuln-detail" style="display:none">
+<div class="detail-block"><div class="detail-label">描述</div><div class="detail-text">【description：输入从哪来、怎么流到 sink、为什么能利用；正文 HTML 转义】</div></div>
+<div class="detail-block"><div class="detail-label">定级评判</div><div class="reason-box">【severity_reason：可达性、权限要求、影响范围、数据敏感度、能否修改/接管/批量泄露/组成攻击链】</div></div>
+<div class="detail-block"><div class="detail-label">POC</div><div class="code-block"><button class="copy-code-btn" onclick="copyReportCode(this)" title="复制 POC"><span class="copy-icon"></span><span class="copy-label">复制</span></button><pre class="poc-code">【raw HTTP 请求包 或 完整 Python 脚本；&lt; &gt; &amp; 必须转义】</pre></div></div>
+<div class="detail-block"><div class="detail-label">预期响应</div><div class="expected-code-block"><pre class="expected-response-code">【expected_result：状态行 + 关键响应内容；配置类 finding 可省略本块】</pre></div></div>
+<div class="detail-block"><div class="detail-label">位置</div><code class="location-code">【file_path:line_number】</code></div>
+<div class="detail-block"><div class="detail-label">调用链</div><div class="trace-box">
+<div class="trace-row"><span class="trace-key">Route:</span> <span class="mono">【METHOD /path】</span></div>
+<div class="trace-row"><span class="trace-key">Source:</span> <span class="mono">【用户输入来源：body.xxx / query.xxx / header.xxx】</span></div>
+<div class="trace-chain"><span class="chain-fn">【handler】</span><span class="chain-sep"> → </span><span class="chain-fn">【service】</span><span class="chain-sep"> → </span><span class="chain-fn">【...】</span></div>
+<div class="trace-row"><span class="trace-key">Sink:</span> <span class="mono sink-hl">【sink 处关键代码行】</span></div>
+</div></div>
+<div class="detail-block"><div class="detail-label">证据</div><pre class="evidence-code">【关键代码片段原文，带注释标明文件；HTML 转义】</pre></div>
+<div class="detail-block"><div class="detail-label">修复建议</div><div class="fix-text">【具体修复写法，非「建议加强校验」】</div></div>
+</div>
+</div>
+<!-- ══════════ finding 块结束 ══════════ -->
+</div>
+<div id="emptyState" class="empty-state" style="display:none">当前筛选条件下没有匹配的漏洞</div>
+</div>
+</div>
+
+<!-- ══════════ 右侧：架构 / 汇总 / 清单 / 修复建议 ══════════ -->
+<div class="right-panel">
+<div class="panel arch-panel">
+<div class="panel-header"><span class="panel-icon">◈</span> 项目架构概览</div>
+<div class="panel-body">
+<div class="arch-grid">
+<div class="arch-cell"><div class="arch-key">框架</div><div class="arch-val">【预扫 framework】</div></div>
+<div class="arch-cell"><div class="arch-key">语言</div><div class="arch-val">【预扫 language】</div></div>
+<div class="arch-cell full"><div class="arch-key">认证机制</div><div class="arch-val">【预扫 auth_mechanism】</div></div>
+<div class="arch-cell full"><div class="arch-key">数据源</div><div class="arch-val">【预扫 data_sources，空格分隔】</div></div>
+<div class="arch-cell full"><div class="arch-key">用户输入入口</div><div class="arch-val">【entry_points，顿号分隔；架构 agent 未完成时写「未采集」】</div></div>
+</div>
+<div class="arch-desc">【合并后 prescan.json 的 summary：核心模块、调用层次、关键依赖；架构 agent 未完成时退回静态摘要（技术栈、覆盖率、端点数、危险调用点数）】</div>
+<details class="arch-details">
+<summary class="arch-toggle">▸ 目录结构</summary>
+<pre class="dir-tree">【预扫描 directory_structure，从 prescan.json 按需读取】</pre>
+</details>
+<details class="arch-details">
+<summary class="arch-toggle">▸ 中间件</summary>
+<div class="mw-list">
+<!-- 每个中间件一个 mw-item；scope 类名 mw-scope-{global|router|route|handler|controller}，取预扫描/路由组中间件链 -->
+<div class="mw-item">
+<span class="mw-name">【Auth】</span>
+<span class="mw-scope mw-scope-router">【router】</span>
+<span class="mw-desc">【中间件作用描述，如 JWT 认证校验】</span>
+</div>
+</div>
+</details>
+<details class="arch-details">
+<summary class="arch-toggle">▸ 端点列表</summary>
+<div class="endpoint-list">
+<!-- 每个端点一个 endpoint-item；method 类名 method-get/post/put/patch/delete；认证列填 permission/user，无认证用 route-auth open + 未标注鉴权 -->
+<div class="endpoint-item">
+<div class="endpoint-main"><span class="route-method method-get">GET</span><span class="route-path">【/path】</span></div>
+<div class="endpoint-meta"><span class="route-desc">【描述】</span><span class="route-auth">【auth】</span></div>
+</div>
+<div class="endpoint-item">
+<div class="endpoint-main"><span class="route-method method-post">POST</span><span class="route-path">【/path】</span></div>
+<div class="endpoint-meta"><span class="route-desc">【描述】</span><span class="route-auth">【auth】</span></div>
+</div>
+</div>
+</details>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-header"><span class="panel-icon">📊</span> 审计汇总</div>
+<div class="panel-body">
+<div class="summary-row">
+<div class="summary-item"><span class="summary-val" id="sumTotal">-</span><span class="summary-key">全部</span></div>
+<div class="summary-item"><span class="summary-val" id="sumConfirmed">-</span><span class="summary-key">已确认</span></div>
+<div class="summary-item"><span class="summary-val" id="sumSuspected">-</span><span class="summary-key">疑似</span></div>
+</div>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-header"><span class="panel-icon">📋</span> 漏洞清单</div>
+<div class="panel-body" style="padding:0;">
+<div class="vuln-table">
+<div class="vuln-table-header">
+<span class="vuln-table-col col-num">#</span>
+<span class="vuln-table-col col-title">漏洞标题</span>
+<span class="vuln-table-col col-type">类型</span>
+<span class="vuln-table-col col-sev">等级</span>
+<span class="vuln-table-col col-file">文件</span>
+</div>
+<div id="vulnTableBody"></div>
+</div>
+</div>
+</div>
+
+<div class="panel" id="fixPanel">
+<div class="panel-header"><span class="panel-icon">🔧</span> 修复建议</div>
+<div class="panel-body" id="fixBody"></div>
+</div>
+</div>
+</div>
+
+<div class="footer">生成于 【YYYY-MM-DD HH:MM:SS】 UTC</div>
+</div>
+
+<script>
+var activeSev = 'all';
+var activeType = 'all';
+
+/* ── 卡片展开/收起 ── */
+function toggleCard(el) {
+  var card = el.closest('.vuln-card');
+  if (!card) return;
+  var detail = card.querySelector('.vuln-detail');
+  var icon = card.querySelector('.expand-icon');
+  if (!detail) return;
+  var open = detail.style.display !== 'none';
+  detail.style.display = open ? 'none' : 'block';
+  if (icon) icon.textContent = open ? '▸' : '▾';
+}
+function expandCard(card, expand) {
+  var detail = card.querySelector('.vuln-detail');
+  var icon = card.querySelector('.expand-icon');
+  if (!detail) return;
+  detail.style.display = expand ? 'block' : 'none';
+  if (icon) icon.textContent = expand ? '▾' : '▸';
+}
+
+/* ── 顶部标签：视图切换 + 严重级别筛选 ── */
+function onSevTab(btn) {
+  var view = btn.getAttribute('data-view');
+  if (view !== 'findings') { showView(view); return; }
+  var sev = btn.getAttribute('data-sev') || 'all';
+  activeSev = (activeSev === sev && sev !== 'all') ? 'all' : sev;
+  showView('findings');
+}
+function showView(name) {
+  /* 两个视图都可缺席：快速扫描/自定义域扫描不做复核，会整块删除 */
+  if (document.getElementById('chainsView')) document.getElementById('chainsView').style.display = name === 'chains' ? 'flex' : 'none';
+  if (document.getElementById('fpView')) document.getElementById('fpView').style.display = name === 'fp' ? 'flex' : 'none';
+  document.getElementById('findingsView').style.display = name === 'findings' ? 'block' : 'none';
+  document.querySelectorAll('.sev-tab').forEach(function(t) {
+    var tView = t.getAttribute('data-view');
+    var isActive = tView === name && (name !== 'findings' || (t.getAttribute('data-sev') || 'all') === activeSev);
+    t.classList.toggle('active', isActive);
+  });
+  if (name === 'findings') applyFilters();
+}
+
+/* ── 类型（审计域）筛选 ── */
+function onTypeTab(btn) {
+  var stage = btn.getAttribute('data-stage');
+  activeType = (activeType === stage && stage !== 'all') ? 'all' : stage;
+  document.querySelectorAll('.type-tab').forEach(function(t) {
+    t.classList.toggle('active', (t.getAttribute('data-stage') || 'all') === activeType);
+  });
+  applyFilters();
+}
+function applyFilters() {
+  var cards = document.querySelectorAll('#vulnList .vuln-card');
+  var visible = 0;
+  cards.forEach(function(card) {
+    var ok = (activeSev === 'all' || card.getAttribute('data-sev') === activeSev) &&
+             (activeType === 'all' || card.getAttribute('data-stage') === activeType);
+    card.style.display = ok ? 'block' : 'none';
+    if (ok) visible++;
+  });
+  document.getElementById('emptyState').style.display = visible === 0 ? 'block' : 'none';
+}
+
+/* ── 漏洞清单表：点击行 → 切回漏洞视图、重置筛选、展开并滚动定位 ── */
+function jumpToFinding(fid) {
+  activeSev = 'all';
+  activeType = 'all';
+  document.querySelectorAll('.type-tab').forEach(function(t) {
+    t.classList.toggle('active', (t.getAttribute('data-stage') || 'all') === 'all');
+  });
+  showView('findings');
+  var card = document.querySelector('.vuln-card[data-fid="' + fid + '"]');
+  if (!card) return;
+  expandCard(card, true);
+  if (card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ── 初始化：从卡片 DOM 自动生成计数、汇总、清单表、修复建议 ── */
+function initReport() {
+  var cards = Array.prototype.slice.call(document.querySelectorAll('#vulnList .vuln-card'));
+  var counts = { all: cards.length, critical: 0, high: 0, medium: 0, low: 0 };
+  var stageCounts = {};
+  var confirmed = 0, suspected = 0;
+  cards.forEach(function(card) {
+    var sev = card.getAttribute('data-sev');
+    if (counts[sev] !== undefined) counts[sev]++;
+    var stage = card.getAttribute('data-stage') || 'other';
+    stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+    if (card.getAttribute('data-confidence') === 'suspected') suspected++; else confirmed++;
+  });
+  /* 顶部标签计数 */
+  document.querySelectorAll('.sev-tab[data-view="findings"]').forEach(function(t) {
+    var sev = t.getAttribute('data-sev') || 'all';
+    var num = t.querySelector('.tab-num');
+    if (num) num.textContent = counts[sev] !== undefined ? counts[sev] : 0;
+  });
+  var chainCount = document.querySelectorAll('#chainsView .vuln-card').length;
+  var chainTab = document.querySelector('.sev-tab[data-view="chains"] .tab-num');
+  if (chainTab) chainTab.textContent = chainCount;
+  var fpView = document.getElementById('fpView');
+  var fpCount = fpView ? fpView.querySelectorAll('.vuln-card').length : 0;
+  var fpTab = document.querySelector('.sev-tab[data-view="fp"] .tab-num');
+  if (fpTab) fpTab.textContent = fpCount;
+  /* 类型标签计数 */
+  document.querySelectorAll('.type-tab').forEach(function(t) {
+    var stage = t.getAttribute('data-stage') || 'all';
+    var n = stage === 'all' ? cards.length : (stageCounts[stage] || 0);
+    var num = t.querySelector('.type-count');
+    if (num) num.textContent = n;
+    t.classList.toggle('empty', n === 0);
+  });
+  /* 头部与汇总 */
+  var head = document.getElementById('headCount');
+  if (head) head.textContent = counts.all + ' 项发现';
+  document.getElementById('sumTotal').textContent = counts.all;
+  document.getElementById('sumConfirmed').textContent = confirmed;
+  document.getElementById('sumSuspected').textContent = suspected;
+  /* 漏洞清单表 */
+  var tbody = document.getElementById('vulnTableBody');
+  var frag = document.createDocumentFragment();
+  cards.forEach(function(card, i) {
+    var sev = card.getAttribute('data-sev') || 'info';
+    var fid = card.getAttribute('data-fid') || ('V-' + (i + 1));
+    var title = '';
+    var titleEl = card.querySelector('.vuln-title');
+    if (titleEl) title = (titleEl.textContent || '').replace(/^[▸▾]\s*/, '').trim();
+    var type = '';
+    var typeEl = card.querySelector('.vuln-type-tag');
+    if (typeEl) type = typeEl.textContent.trim();
+    var loc = '';
+    var locEl = card.querySelector('.location-code');
+    if (locEl) loc = locEl.textContent.trim();
+    var row = document.createElement('div');
+    row.className = 'vuln-table-row';
+    row.setAttribute('onclick', 'jumpToFinding(\'' + fid.replace(/'/g, '') + '\')');
+    row.innerHTML =
+      '<span class="vuln-table-col col-num">' + (i + 1) + '</span>' +
+      '<span class="vuln-table-col col-title"></span>' +
+      '<span class="vuln-table-col col-type"></span>' +
+      '<span class="vuln-table-col col-sev"><span class="sev-tag sev-' + sev + '">' + sev.toUpperCase() + '</span></span>' +
+      '<span class="vuln-table-col col-file"></span>';
+    row.children[1].textContent = title;
+    row.children[2].textContent = type;
+    row.children[4].textContent = loc;
+    frag.appendChild(row);
+  });
+  tbody.appendChild(frag);
+  /* 修复建议列表 */
+  var fixBody = document.getElementById('fixBody');
+  var fixFrag = document.createDocumentFragment();
+  var anyFix = false;
+  cards.forEach(function(card) {
+    var fix = card.querySelector('.fix-text');
+    if (!fix) return;
+    var sev = card.getAttribute('data-sev') || 'info';
+    var title = '';
+    var titleEl = card.querySelector('.vuln-title');
+    if (titleEl) title = (titleEl.textContent || '').replace(/^[▸▾]\s*/, '').trim();
+    var item = document.createElement('div');
+    item.className = 'fix-item';
+    var header = document.createElement('div');
+    header.className = 'fix-item-header';
+    var tag = document.createElement('span');
+    tag.className = 'sev-tag sev-' + sev;
+    tag.textContent = sev.toUpperCase();
+    var titleSpan = document.createElement('span');
+    titleSpan.className = 'fix-item-title';
+    titleSpan.textContent = title;
+    header.appendChild(tag);
+    header.appendChild(titleSpan);
+    var text = document.createElement('div');
+    text.className = 'fix-item-text';
+    text.textContent = fix.textContent;
+    item.appendChild(header);
+    item.appendChild(text);
+    fixFrag.appendChild(item);
+    anyFix = true;
+  });
+  if (anyFix) fixBody.appendChild(fixFrag);
+  else document.getElementById('fixPanel').style.display = 'none';
+  /* 默认视图与筛选状态 */
+  showView('findings');
+  applyFilters();
+}
+
+/* ── 复制按钮 ── */
+function copyReportCode(button) {
+  var wrap = button.parentElement;
+  var pre = wrap ? wrap.querySelector('pre') : null;
+  if (!pre) return;
+  var text = pre.innerText || pre.textContent || '';
+  var label = button.querySelector('.copy-label');
+  if (!label) { label = document.createElement('span'); label.className = 'copy-label'; label.textContent = '复制'; button.appendChild(label); }
+  function done() {
+    label.textContent = '已复制';
+    window.setTimeout(function() { label.textContent = '复制'; }, 1200);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(function() { fallbackCopy(text); done(); });
+  } else {
+    fallbackCopy(text);
+    done();
+  }
+}
+function fallbackCopy(text) {
+  var textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(textarea);
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initReport);
+else initReport();
+</script>
+</body>
+</html>
