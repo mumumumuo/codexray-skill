@@ -15,7 +15,7 @@
 | 域 | 覆盖 |
 |---|---|
 | `rce` | 命令执行、代码注入、反序列化 RCE、模板注入（SSTI）、表达式语言注入 |
-| `injection` | SQL / NoSQL / LDAP / XPath 注入 |
+| `injection` | SQL / NoSQL / LDAP / XPath 注入 / XXE |
 | `file` | 任意文件上传 / 下载 / 读取、路径遍历、zip slip |
 | `auth` | 未授权访问、认证绕过、水平 / 垂直越权、注册提权、JWT 密钥、密码存储 |
 | `business` | 业务流程绕过、金额篡改、状态机绕过、条件竞争、幂等性缺失、SSRF |
